@@ -1,0 +1,41 @@
+{
+  "name": "modelrot",
+  "version": "0.1.0",
+  "description": "Find deprecated and soon-to-be-shut-down AI model IDs (OpenAI, Anthropic, Google, Bedrock, Azure) in your code, and fix them.",
+  "type": "module",
+  "bin": {
+    "modelrot": "src/cli.js"
+  },
+  "files": [
+    "src",
+    "catalog"
+  ],
+  "scripts": {
+    "test": "node --test test/modelrot.test.js",
+    "build:catalog": "node scripts/build-catalog.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "openai",
+    "anthropic",
+    "claude",
+    "gemini",
+    "bedrock",
+    "azure",
+    "deprecation",
+    "migration",
+    "cli",
+    "codemod"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/timo6pi-glitch/modelrot.git"
+  },
+  "bugs": "https://github.com/timo6pi-glitch/modelrot/issues",
+  "homepage": "https://github.com/timo6pi-glitch/modelrot#readme",
+  "license": "MIT"
+}

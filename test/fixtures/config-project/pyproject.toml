@@ -1,0 +1,3 @@
+[agent]
+model = "anthropic/claude-3-5-sonnet-latest"
+secret = "FAKE-SECRET-DO-NOT-PRINT-8888"

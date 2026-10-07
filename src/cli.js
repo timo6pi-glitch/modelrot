@@ -9,6 +9,8 @@ const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url),
 
 const HELP = `modelrot ${pkg.version}
 Find AI model IDs in your code that are deprecated or about to be shut down, and fix them.
+Scans JS/TS/Python code and .env, YAML, JSON and TOML config files.
+Lines from config files are never printed, only the model IDs, so secrets stay private.
 
 Usage
   npx modelrot scan [dir]              List deprecated models used in dir (default: .)
@@ -100,6 +102,10 @@ function printFix(files, dryRun, c) {
     if (!file.changes.length && !file.skipped.length) continue;
     console.log(c.bold(file.file));
     for (const ch of file.changes) {
+      if (ch.model) {
+        console.log(`  ~ ${String(ch.line).padStart(4)} | ${c.red(ch.model)} → ${c.green(ch.replacement)}`);
+        continue;
+      }
       console.log(c.red(`  - ${String(ch.line).padStart(4)} | ${ch.before.trim()}`));
       console.log(c.green(`  + ${String(ch.line).padStart(4)} | ${ch.after.trim()}`));
     }

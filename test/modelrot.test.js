@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { loadCatalog, matchModelId, resolveReplacement } from '../src/catalog.js';
-import { scanText, scanDirectory } from '../src/scan.js';
+import { scanText, scanDirectory, fileKind } from '../src/scan.js';
 import { applyFixes } from '../src/fix.js';
 
 const catalog = loadCatalog();
@@ -119,6 +119,9 @@ test('--platform filters which shutdown dates are used', () => {
   const [onAzure] = scanText("model = 'o3-mini'", catalog, { platform: 'azure' });
   assert.equal(onAzure.entry.shutdown, '2026-11-19');
   assert.equal(scanText("model = 'gpt-4'", catalog, { platform: 'azure' }).length, 0);
+  // Retires on Azure only: valid on the Anthropic API, so silent unless asked.
+  assert.equal(scanText("model = 'claude-haiku-4-5'", catalog).length, 0);
+  assert.equal(scanText("model = 'claude-haiku-4-5'", catalog, { platform: 'azure' }).length, 1);
 });
 
 // ---------- directory scan ----------
@@ -213,4 +216,89 @@ test('CLI fix rewrites files, then a new scan only shows manual items', () => {
 test('CLI rejects unknown options and platforms', () => {
   assert.equal(runCli(['scan', '--nope']).status, 2);
   assert.equal(runCli(['scan', '--platform', 'gcp']).status, 2);
+});
+
+// ---------- config files (.env, YAML, JSON, TOML) ----------
+
+const CONFIG_FIXTURE = fileURLToPath(new URL('./fixtures/config-project', import.meta.url));
+
+function copyConfigFixture() {
+  const dir = mkdtempSync(join(tmpdir(), 'modelrot-config-'));
+  cpSync(CONFIG_FIXTURE, dir, { recursive: true });
+  return dir;
+}
+
+test('fileKind recognises config files and skips lockfiles', () => {
+  assert.equal(fileKind('.env'), 'env');
+  assert.equal(fileKind('app/.env.example'), 'env');
+  assert.equal(fileKind('.env.production.local'), 'env');
+  assert.equal(fileKind('config.yml'), 'yaml');
+  assert.equal(fileKind('config.yaml'), 'yaml');
+  assert.equal(fileKind('settings.json'), 'json');
+  assert.equal(fileKind('pyproject.toml'), 'toml');
+  assert.equal(fileKind('package-lock.json'), null);
+  assert.equal(fileKind('pnpm-lock.yaml'), null);
+  assert.equal(fileKind('README.md'), null);
+});
+
+test('.env: reads KEY=value, quoted values and export, ignores comments', () => {
+  const env = 'OPENAI_MODEL=gpt-4\nB_MODEL="gpt-4-turbo"\nexport C_MODEL=\'o3-mini\' # note\n# D_MODEL=gpt-4\nTEXT=use gpt-4 here\n';
+  assert.deepEqual(scanText(env, catalog, { kind: 'env' }).map((f) => `${f.line}:${f.id}`), ['1:gpt-4', '2:gpt-4-turbo', '3:o3-mini']);
+});
+
+test('.env: short IDs need a model-like key', () => {
+  assert.equal(scanText('SESSION_ID=o1\n', catalog, { kind: 'env' }).length, 0);
+  assert.equal(scanText('LLM=o1\n', catalog, { kind: 'env' }).length, 1);
+});
+
+test('YAML: reads key values and list items, ignores prose and comments', () => {
+  const yaml = 'model: gpt-4\nmodels:\n  - "o1-pro"\n  - claude-2.1\ndescription: we left gpt-4\n# model: gpt-4\nmodel_b: gpt-4-turbo # old\n';
+  assert.deepEqual(scanText(yaml, catalog, { kind: 'yaml' }).map((f) => `${f.line}:${f.id}`), ['1:gpt-4', '4:claude-2.1', '7:gpt-4-turbo']);
+});
+
+test('scanDirectory finds models in every config format', () => {
+  const scan = scanDirectory(CONFIG_FIXTURE, catalog);
+  const found = scan.results.flatMap((r) => r.findings.map((f) => `${r.file}:${f.line}:${f.id}`));
+  assert.deepEqual(found, [
+    '.env:4:gpt-4-turbo',
+    '.env:5:o1',
+    '.env.example:2:claude-sonnet-4-5-20250929',
+    'deploy/app.yaml:3:gpt-3.5-turbo',
+    'deploy/app.yaml:6:claude-3-haiku-20240307',
+    'pyproject.toml:2:claude-3-5-sonnet-latest',
+    'settings.json:2:gemini-2.0-flash',
+  ]);
+  assert.equal(scan.fileCount, 5, 'package-lock.json is skipped');
+});
+
+test('security: no command ever prints a secret from a config file', () => {
+  const runs = [
+    runCli(['scan', CONFIG_FIXTURE]),
+    runCli(['scan', CONFIG_FIXTURE, '--json']),
+    runCli(['fix', CONFIG_FIXTURE, '--dry-run']),
+    runCli(['fix', CONFIG_FIXTURE, '--dry-run', '--json']),
+  ];
+  for (const r of runs) {
+    assert.ok(r.stdout.length > 0);
+    assert.doesNotMatch(r.stdout + r.stderr, /FAKE-SECRET|DATABASE_PASSWORD|API_KEY|api_key|token/);
+  }
+  assert.match(runs[2].stdout, /~\s+4 \| gpt-4-turbo → gpt-5\.6-sol/);
+});
+
+test('security: fix in a real run prints only model IDs and keeps secrets intact', () => {
+  const dir = copyConfigFixture();
+  try {
+    const before = readFileSync(join(dir, '.env'), 'utf8');
+    const r = runCli(['fix', dir]);
+    assert.equal(r.status, 0, r.stderr);
+    assert.doesNotMatch(r.stdout, /FAKE-SECRET/);
+    assert.match(r.stdout, /Made 7 replacements/);
+    const after = readFileSync(join(dir, '.env'), 'utf8');
+    assert.equal(after, before.replace('=gpt-4-turbo', '=gpt-5.6-sol').replace("'o1'", "'gpt-5.6-sol'"));
+    assert.match(readFileSync(join(dir, 'deploy/app.yaml'), 'utf8'), /model: gpt-5\.6-terra {2}# FAKE-SECRET-DO-NOT-PRINT-5555/);
+    assert.match(readFileSync(join(dir, 'pyproject.toml'), 'utf8'), /model = "anthropic\/claude-sonnet-4-6"/);
+    assert.equal(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')).model, 'gemini-3.6-flash');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

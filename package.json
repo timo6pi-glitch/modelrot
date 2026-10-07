@@ -1,7 +1,7 @@
 {
   "name": "modelrot",
   "version": "0.1.0",
-  "description": "Find deprecated and soon-to-be-shut-down AI model IDs (OpenAI, Anthropic, Google, Bedrock, Azure) in your code, and fix them.",
+  "description": "Find deprecated and soon-to-be-shut-down AI model IDs (OpenAI, Anthropic, Google, Bedrock, Azure) in your code and config files, and fix them.",
   "type": "module",
   "bin": {
     "modelrot": "src/cli.js"

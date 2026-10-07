@@ -56,6 +56,8 @@ Then apply them:
 npx modelrot fix
 ```
 
+**Your secrets stay private.** Config files often hold API keys and passwords, so for `.env`, YAML, JSON and TOML files modelrot never prints the line. It only shows the model IDs, as in `~ 4 | gpt-4-turbo → gpt-5.6-sol`. This applies to `scan`, `fix`, `--dry-run` and `--json`.
+
 modelrot only changes the model ID inside the string, so `"openai/gpt-4"` becomes `"openai/gpt-5.6-sol"` and the quotes and prefix stay as they are. Models with no drop-in replacement are listed for you to fix by hand. A newer model can behave differently, so **review the diff and run your tests before you ship**.
 
 ## Commands
@@ -89,8 +91,10 @@ jobs:
 
 ## What it detects
 
-- **Languages:** `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts`, `.tsx`, `.py`. `node_modules`, virtualenvs and build folders are skipped.
-- **Exact model IDs inside string literals.** `"gpt-4"` matches, while `"gpt-4o"`, `"gpt-4.1"` and a `gpt-4` in a comment do not.
+- **Code:** `.js`, `.mjs`, `.cjs`, `.jsx`, `.ts`, `.mts`, `.cts`, `.tsx`, `.py`.
+- **Config:** `.env`, `.env.*` (`.env.example`, `.env.local`…), `.yaml`, `.yml`, `.json`, `.toml`. Lockfiles, `node_modules`, virtualenvs and build folders are skipped.
+- **Exact model IDs only.** In code and JSON/TOML, modelrot reads string literals. In `.env` and YAML, it reads whole values (`OPENAI_MODEL=gpt-4`, `model: gpt-4`, `- gpt-4`). `"gpt-4"` matches, while `"gpt-4o"`, `"gpt-4.1"`, a `gpt-4` in a sentence and a `gpt-4` in a comment do not.
+- **Short IDs** such as `o1`, `o3-mini` or `tts` count only when the line mentions a model (`model`, `engine`, `deployment` or `llm`), so `{ id: "o1" }` and `SESSION_ID=o1` are ignored.
 - **Prefixes:** router prefixes like `openai/gpt-4` or `models/gemini-2.0-flash`, and Bedrock cross-region prefixes like `us.anthropic.claude-...`.
 - **Replacement chains:** if the official replacement is itself deprecated, modelrot follows the chain to a model that is not.
 
@@ -118,7 +122,7 @@ Last checked: **2026-10-07**. Providers change these pages. If a date is wrong o
 ### Known limits
 
 - OpenAI lists the dated GPT-5 and o3 snapshots (`gpt-5-2025-08-07`, `o3-2025-04-16`…) for December 11, 2026, but not the `gpt-5` and `o3` aliases, so modelrot does not flag the aliases.
-- On Azure, your code usually holds a *deployment name* you chose yourself, not the model name, so modelrot cannot see it. Check your deployments in the Azure portal.
+- On Azure, your code usually holds a *deployment name* you chose yourself, not the model name, so modelrot cannot see it. Check your deployments in the Azure portal. Names that retire only on Azure, such as `claude-haiku-4-5`, stay valid on the provider's own API, so they are reported only with `--platform azure`.
 - Model IDs built at runtime, such as `` `gpt-${version}` ``, or read from environment variables are not detected.
 
 ## Contributing

@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync } from 'node:fs';
+import { isConfigKind } from './scan.js';
 
 /** Returns the new text with every fixable finding replaced, plus what changed. */
 export function applyFixes(text, findings) {
@@ -27,7 +28,11 @@ export function fixScanResult(scan, { dryRun = false } = {}) {
     const before = readFileSync(result.path, 'utf8');
     const { output, fixed, skipped } = applyFixes(before, result.findings);
     if (fixed.length && !dryRun) writeFileSync(result.path, output);
-    files.push({ ...result, fixed, skipped, changes: previewChanges(before, output) });
+    // Config files can hold secrets: only ever show the model IDs, never the line.
+    const changes = isConfigKind(result.kind)
+      ? fixed.map((f) => ({ line: f.line, model: f.id, replacement: f.replacement }))
+      : previewChanges(before, output);
+    files.push({ ...result, fixed, skipped, changes });
   }
   return files;
 }

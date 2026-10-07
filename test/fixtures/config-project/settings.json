@@ -1,0 +1,5 @@
+{
+  "model": "gemini-2.0-flash",
+  "token": "FAKE-SECRET-DO-NOT-PRINT-7777",
+  "notes": "we no longer use gpt-4"
+}

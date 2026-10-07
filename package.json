@@ -12,7 +12,8 @@
   ],
   "scripts": {
     "test": "node --test test/modelrot.test.js",
-    "build:catalog": "node scripts/build-catalog.mjs"
+    "build:catalog": "node scripts/build-catalog.mjs && node scripts/verify-catalog.mjs --write",
+    "verify:catalog": "node scripts/verify-catalog.mjs"
   },
   "engines": {
     "node": ">=18"

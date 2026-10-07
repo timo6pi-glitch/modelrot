@@ -17,22 +17,24 @@ $ npx modelrot scan
 
 scripts/summarize.py
   8:16    gpt-4  OpenAI API  shuts down 2026-10-23 (in 16 days)  → gpt-5.6-sol
-          https://developers.openai.com/api/docs/deprecations
-  14:11   claude-3-haiku-20240307  Anthropic API  shut down on 2026-04-20  → claude-haiku-4-5-20251001
-          https://platform.claude.com/docs/en/about-claude/model-deprecations
+          shutdown date: https://developers.openai.com/api/docs/deprecations
+          replacement:   https://developers.openai.com/api/docs/deprecations
+          replacement:   https://developers.openai.com/api/docs/models/gpt-5.6-sol
 
 src/agent.ts
   5:31    claude-sonnet-4-5-20250929  Anthropic API  shuts down 2026-11-30 (in 54 days)  → claude-sonnet-5-5
-          https://platform.claude.com/docs/en/about-claude/model-deprecations
-  8:34    anthropic.claude-sonnet-4-20250514-v1:0  AWS Bedrock (Anthropic)  shuts down 2026-10-14 (in 7 days)  → no drop-in replacement
+          shutdown date: https://platform.claude.com/docs/en/about-claude/model-deprecations
+          replacement:   https://platform.claude.com/docs/en/about-claude/model-deprecations
+  8:34    anthropic.claude-sonnet-4-20250514-v1:0  AWS Bedrock (Anthropic)  shuts down 2026-10-14 (in 7 days)  → fix by hand
           Pick an Active Claude model ID from the Amazon Bedrock model cards.
+          shutdown date: https://docs.aws.amazon.com/bedrock/latest/userguide/model-lifecycle-legacy.html
 
-src/chat.js
-  7:11    gpt-4-turbo  OpenAI API  shuts down 2026-10-23 (in 16 days)  → gpt-5.6-sol
-  14:36   o3-mini  OpenAI API  shuts down 2026-10-23 (in 16 days)  → gpt-5.6-sol
-          also on Azure (OpenAI): 2026-11-19
+config/app.yaml
+  3:10    claude-3-5-sonnet-latest  Anthropic API  shut down on 2025-10-28  → fix by hand
+          The suggested replacement could not be confirmed on the official pages. Check https://platform.claude.com/docs/en/about-claude/model-deprecations
+          shutdown date: https://platform.claude.com/docs/en/about-claude/model-deprecations
 
-Found 6 deprecated model references in 3 of 3 files (1 already shut down).
+Found 4 deprecated model references in 3 of 12 files (1 already shut down).
 Preview the fixes with npx modelrot fix --dry-run
 ```
 
@@ -58,7 +60,7 @@ npx modelrot fix
 
 **Your secrets stay private.** Config files often hold API keys and passwords, so for `.env`, YAML, JSON and TOML files modelrot never prints the line. It only shows the model IDs, as in `~ 4 | gpt-4-turbo → gpt-5.6-sol`. This applies to `scan`, `fix`, `--dry-run` and `--json`.
 
-modelrot only changes the model ID inside the string, so `"openai/gpt-4"` becomes `"openai/gpt-5.6-sol"` and the quotes and prefix stay as they are. Models with no drop-in replacement are listed for you to fix by hand. A newer model can behave differently, so **review the diff and run your tests before you ship**.
+modelrot only changes the model ID inside the string, so `"openai/gpt-4"` becomes `"openai/gpt-5.6-sol"` and the quotes and prefix stay as they are. **modelrot only applies a replacement that is confirmed on the official pages** (see [How replacements are verified](#how-replacements-are-verified)). Everything else is shown as **fix by hand**, with the reason, and is never changed automatically. A newer model can behave differently, so **review the diff and run your tests before you ship**.
 
 ## Commands
 
@@ -107,7 +109,18 @@ jobs:
 - `platform`: `api` for the provider's own API, `bedrock` for AWS Bedrock, or `azure` for Azure / Microsoft Foundry
 - `shutdown`: the date calls start failing (`YYYY-MM-DD`)
 - `replacement`: the officially recommended replacement, plus `alternatives` and a `replacementNote` when needed
+- `replacementVerified`: `true` only when the replacement passed both checks below
+- `replacementSources`: the official pages that confirm the replacement
 - `source`: the official page the date comes from
+
+### How replacements are verified
+
+[`scripts/verify-catalog.mjs`](scripts/verify-catalog.mjs) downloads the official pages and checks every replacement twice:
+
+1. **Recommended:** the deprecated model and its replacement appear in the same row of the provider's official deprecation table.
+2. **Exists:** the replacement is a live model that is not itself deprecated. For OpenAI, it has its own page under `developers.openai.com/api/docs/models/` without a deprecation notice. For Anthropic, it is marked *Active* in the official status table. For Google, it is listed on the models or embeddings page. For Azure, it has its own *GA* row in the retirement schedule.
+
+If the replacement is itself deprecated, it still counts when its own replacement is verified, and modelrot follows the chain. All other replacements show as **fix by hand**. That includes undocumented aliases such as `claude-3-5-sonnet-latest`, and cases where the official page names several options, such as "gpt-5 or gpt-4.1".
 
 | Provider / platform | Official source |
 | --- | --- |
@@ -133,7 +146,7 @@ cd modelrot
 npm test
 ```
 
-The catalog is generated from [`scripts/build-catalog.mjs`](scripts/build-catalog.mjs). Edit that file, run `npm run build:catalog`, and commit both files. modelrot has zero dependencies and needs Node.js 18 or newer.
+The catalog is generated from [`scripts/build-catalog.mjs`](scripts/build-catalog.mjs). Edit that file, run `npm run build:catalog` (it rebuilds the catalog and re-checks every replacement against the official pages), and commit both files. `npm run verify:catalog` re-checks without writing anything. modelrot has zero dependencies and needs Node.js 18 or newer.
 
 ## License
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -67,11 +67,61 @@ test('replacement chains always end on a model that is not itself replaced', () 
   for (const e of catalog.models) {
     const r = resolveReplacement(e, catalog);
     if (!r) continue;
-    const next = (catalog.byId.get(r) ?? []).find((x) => x.platform === e.platform);
-    assert.ok(!next?.replacement, `${e.id} resolves to ${r}, which is itself deprecated`);
+    const next = (catalog.byId.get(r.id) ?? []).find((x) => x.platform === e.platform);
+    assert.ok(!next?.replacement, `${e.id} resolves to ${r.id}, which is itself deprecated`);
   }
   const lite = catalog.byId.get('gemini-2.0-flash-lite')[0];
-  assert.equal(resolveReplacement(lite, catalog), 'gemini-3.5-flash-lite');
+  assert.equal(resolveReplacement(lite, catalog).id, 'gemini-3.5-flash-lite');
+});
+
+test('every replacement was checked against the official pages', () => {
+  assert.match(catalog.verified, /^\d{4}-\d{2}-\d{2}$/);
+  for (const e of catalog.models) {
+    if (!e.replacement) continue;
+    assert.equal(typeof e.replacementVerified, 'boolean', `${e.id} was not checked`);
+    if (e.replacementVerified) {
+      assert.ok(e.replacementSources.length >= 1, e.id);
+      assert.equal(e.replacementSources[0], e.source, `${e.id}: first source is the official recommendation`);
+      for (const s of e.replacementSources) assert.match(s, /^https:\/\/(developers\.openai\.com|platform\.claude\.com|ai\.google\.dev|learn\.microsoft\.com)\//);
+    }
+  }
+});
+
+test('a verified replacement comes with its official sources', () => {
+  const turbo = catalog.byId.get('gpt-4-turbo').find((e) => e.platform === 'api');
+  assert.deepEqual(resolveReplacement(turbo, catalog), {
+    id: 'gpt-5.6-sol',
+    sources: ['https://developers.openai.com/api/docs/deprecations', 'https://developers.openai.com/api/docs/models/gpt-5.6-sol'],
+  });
+});
+
+test('an unconfirmed replacement is never applied: fix by hand', () => {
+  // claude-3-5-sonnet-latest is an alias the official table does not list.
+  const alias = catalog.byId.get('claude-3-5-sonnet-latest')[0];
+  assert.equal(alias.replacementVerified, false);
+  assert.equal(resolveReplacement(alias, catalog), null);
+  const [finding] = scanText('model = "claude-3-5-sonnet-latest"', catalog);
+  assert.equal(finding.replacement, null);
+  const { output, skipped } = applyFixes('model = "claude-3-5-sonnet-latest"', [finding]);
+  assert.equal(output, 'model = "claude-3-5-sonnet-latest"');
+  assert.equal(skipped.length, 1);
+  // Even if a catalog edit forgets to verify, nothing is applied.
+  assert.equal(resolveReplacement({ ...alias, replacementVerified: undefined }, catalog), null);
+});
+
+test('CLI shows "fix by hand" and the reason for unconfirmed replacements', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'modelrot-manual-'));
+  try {
+    writeFileSync(join(dir, 'a.py'), 'MODEL = "claude-3-5-sonnet-latest"\n');
+    const r = runCli(['scan', dir]);
+    assert.match(r.stdout, /claude-3-5-sonnet-latest .* → fix by hand/);
+    assert.match(r.stdout, /could not be confirmed on the official pages/);
+    const fix = runCli(['fix', dir]);
+    assert.match(fix.stdout, /! +1 \| claude-3-5-sonnet-latest: fix by hand/);
+    assert.equal(readFileSync(join(dir, 'a.py'), 'utf8'), 'MODEL = "claude-3-5-sonnet-latest"\n');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 // ---------- matching ----------
@@ -292,11 +342,12 @@ test('security: fix in a real run prints only model IDs and keeps secrets intact
     const r = runCli(['fix', dir]);
     assert.equal(r.status, 0, r.stderr);
     assert.doesNotMatch(r.stdout, /FAKE-SECRET/);
-    assert.match(r.stdout, /Made 7 replacements/);
+    assert.match(r.stdout, /Made 6 replacements/);
     const after = readFileSync(join(dir, '.env'), 'utf8');
     assert.equal(after, before.replace('=gpt-4-turbo', '=gpt-5.6-sol').replace("'o1'", "'gpt-5.6-sol'"));
     assert.match(readFileSync(join(dir, 'deploy/app.yaml'), 'utf8'), /model: gpt-5\.6-terra {2}# FAKE-SECRET-DO-NOT-PRINT-5555/);
-    assert.match(readFileSync(join(dir, 'pyproject.toml'), 'utf8'), /model = "anthropic\/claude-sonnet-4-6"/);
+    // Unconfirmed alias: left untouched for a human to fix.
+    assert.match(readFileSync(join(dir, 'pyproject.toml'), 'utf8'), /model = "anthropic\/claude-3-5-sonnet-latest"/);
     assert.equal(JSON.parse(readFileSync(join(dir, 'settings.json'), 'utf8')).model, 'gemini-3.6-flash');
   } finally {
     rmSync(dir, { recursive: true, force: true });

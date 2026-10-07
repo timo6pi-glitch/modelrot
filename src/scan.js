@@ -117,6 +117,7 @@ export function scanText(text, catalog, { platform, kind = 'code' } = {}) {
       continue;
     }
     const primary = primaryEntry(entries);
+    const resolved = resolveReplacement(primary, catalog);
     findings.push({
       id: match.id,
       start,
@@ -125,7 +126,8 @@ export function scanText(text, catalog, { platform, kind = 'code' } = {}) {
       column: start - lineStarts[line] + 1,
       entry: primary,
       others: entries.filter((e) => e !== primary),
-      replacement: resolveReplacement(primary, catalog),
+      replacement: resolved?.id ?? null,
+      replacementSources: resolved?.sources ?? [],
     });
   }
   return findings;

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { existsSync, statSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { loadCatalog, platformLabel, PLATFORMS } from './catalog.js';
+import { loadCatalog, platformLabel, manualReason, PLATFORMS } from './catalog.js';
 import { scanDirectory } from './scan.js';
 import { fixScanResult } from './fix.js';
 
@@ -79,11 +79,14 @@ function printScan(scan, c, now) {
   for (const result of scan.results) {
     console.log(c.bold(result.file));
     for (const f of result.findings) {
-      const arrow = f.replacement ? `→ ${c.green(f.replacement)}` : c.dim('→ no drop-in replacement');
+      const arrow = f.replacement ? `→ ${c.green(f.replacement)}` : c.yellow('→ fix by hand');
       console.log(`  ${c.dim(`${f.line}:${f.column}`.padEnd(8))}${c.cyan(f.id)}  ${platformLabel(f.entry)}  ${describeDate(f.entry.shutdown, now, c)}  ${arrow}`);
-      if (f.entry.replacementNote) console.log(`  ${' '.repeat(8)}${c.dim(f.entry.replacementNote)}`);
-      for (const o of f.others) console.log(`  ${' '.repeat(8)}${c.dim(`also on ${platformLabel(o)}: ${o.shutdown}`)}`);
-      console.log(`  ${' '.repeat(8)}${c.dim(f.entry.source)}`);
+      const pad = ' '.repeat(10);
+      if (f.replacement && f.entry.replacementNote) console.log(`${pad}${c.dim(f.entry.replacementNote)}`);
+      if (!f.replacement) console.log(`${pad}${c.dim(manualReason(f.entry))}`);
+      for (const o of f.others) console.log(`${pad}${c.dim(`also on ${platformLabel(o)}: ${o.shutdown}`)}`);
+      console.log(`${pad}${c.dim(`shutdown date: ${f.entry.source}`)}`);
+      for (const s of f.replacementSources) console.log(`${pad}${c.dim(`replacement:   ${s}`)}`);
     }
     console.log('');
   }
@@ -110,7 +113,7 @@ function printFix(files, dryRun, c) {
       console.log(c.green(`  + ${String(ch.line).padStart(4)} | ${ch.after.trim()}`));
     }
     for (const s of file.skipped) {
-      console.log(c.yellow(`  ! ${String(s.line).padStart(4)} | ${s.id}: no drop-in replacement, fix by hand. ${s.entry.replacementNote ?? ''}`));
+      console.log(c.yellow(`  ! ${String(s.line).padStart(4)} | ${s.id}: fix by hand. ${manualReason(s.entry)}`));
     }
     fixed += file.fixed.length;
     console.log('');
@@ -123,7 +126,8 @@ function printFix(files, dryRun, c) {
 function printList(catalog, c, now, platform) {
   for (const e of catalog.models) {
     if (platform && e.platform !== platform) continue;
-    console.log(`${c.cyan(e.id.padEnd(44))} ${platformLabel(e).padEnd(22)} ${describeDate(e.shutdown, now, c)}  → ${e.replacement ?? '—'}`);
+    const repl = e.replacement && e.replacementVerified ? e.replacement : 'fix by hand';
+    console.log(`${c.cyan(e.id.padEnd(44))} ${platformLabel(e).padEnd(22)} ${describeDate(e.shutdown, now, c)}  → ${repl}`);
   }
 }
 
@@ -170,7 +174,8 @@ export function main(argv = process.argv.slice(2)) {
         r.findings.map((f) => ({
           file: r.file, line: f.line, column: f.column, model: f.id,
           provider: f.entry.provider, platform: f.entry.platform, shutdown: f.entry.shutdown,
-          replacement: f.replacement, note: f.entry.replacementNote ?? null, source: f.entry.source,
+          replacement: f.replacement, replacementSources: f.replacementSources,
+          note: f.replacement ? f.entry.replacementNote ?? null : manualReason(f.entry), source: f.entry.source,
         })),
       );
       console.log(JSON.stringify({ filesScanned: scan.fileCount, findings }, null, 2));

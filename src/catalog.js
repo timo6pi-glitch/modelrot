@@ -52,17 +52,32 @@ export function primaryEntry(entries) {
 }
 
 /**
- * Follows the replacement chain on the same platform, so a replacement that is
- * itself deprecated (e.g. gemini-2.0-flash-lite -> gemini-3.1-flash-lite) is skipped.
+ * The replacement to apply, or null when it must be fixed by hand.
+ * Only replacements confirmed on the official pages (scripts/verify-catalog.mjs) are used.
+ * Follows the chain on the same platform, so a replacement that is itself deprecated
+ * (e.g. gemini-2.0-flash-lite -> gemini-3.1-flash-lite) is skipped.
+ * Returns { id, sources } where sources lists every official page behind the answer.
  */
 export function resolveReplacement(entry, catalog) {
+  if (!entry.replacement || !entry.replacementVerified) return null;
   let current = entry;
+  const sources = [...entry.replacementSources];
   const seen = new Set([entry.id]);
-  while (current.replacement) {
+  for (;;) {
     const next = (catalog.byId.get(current.replacement) ?? []).find((e) => e.platform === entry.platform);
-    if (!next || !next.replacement || seen.has(next.id)) return current.replacement;
+    if (!next || seen.has(next.id)) return { id: current.replacement, sources: [...new Set(sources)] };
+    if (!next.replacement || !next.replacementVerified) return null;
     seen.add(next.id);
+    sources.push(...next.replacementSources);
     current = next;
   }
-  return null;
+}
+
+/** Why a finding has no automatic replacement. */
+export function manualReason(entry) {
+  if (entry.replacementNote) return entry.replacementNote;
+  if (entry.replacement && !entry.replacementVerified) {
+    return `The suggested replacement could not be confirmed on the official pages. Check ${entry.source}`;
+  }
+  return `Check ${entry.source}`;
 }

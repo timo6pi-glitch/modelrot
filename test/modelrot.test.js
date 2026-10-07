@@ -144,9 +144,9 @@ test('scanDirectory finds every deprecated model in the sample project', () => {
 // ---------- fix ----------
 
 test('applyFixes replaces IDs and keeps prefixes and quotes', () => {
-  const text = `a = "openai/gpt-3.5-turbo"\nb = 'us.anthropic.claude-sonnet-4-20250514-v1:0'\nc = \`o1\``;
+  const text = `a = "openai/gpt-3.5-turbo"\nb = 'us.anthropic.claude-sonnet-4-20250514-v1:0'\nmodel = \`o1\``;
   const { output, fixed, skipped } = applyFixes(text, scanText(text, catalog));
-  assert.equal(output, `a = "openai/gpt-5.6-terra"\nb = 'us.anthropic.claude-sonnet-4-20250514-v1:0'\nc = \`gpt-5.6-sol\``);
+  assert.equal(output, `a = "openai/gpt-5.6-terra"\nb = 'us.anthropic.claude-sonnet-4-20250514-v1:0'\nmodel = \`gpt-5.6-sol\``);
   assert.equal(fixed.length, 2);
   assert.equal(skipped.length, 1, 'Bedrock entry has no drop-in replacement');
 });

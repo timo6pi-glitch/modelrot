@@ -106,6 +106,15 @@ test('scanText ignores comments and words outside string literals', () => {
   assert.equal(scanText('// we used gpt-4 before\n# gpt-4\nconst x = gpt4;', catalog).length, 0);
 });
 
+test('short IDs like "o1" only count when the line is about a model', () => {
+  assert.equal(scanText('return { id: "o1", productId: "p1" };', catalog).length, 0);
+  assert.equal(scanText('const voices = ["tts", "whisper"];', catalog).length, 0);
+  assert.equal(scanText('client.create({ model: "o1" })', catalog).length, 1);
+  assert.equal(scanText('MODEL_NAME = "o3-mini"', catalog).length, 1);
+  assert.equal(scanText('const route = "openai/o1";', catalog).length, 1, 'a provider prefix is enough');
+  assert.equal(scanText('const m = "gpt-4-turbo";', catalog).length, 1, 'long IDs need no context');
+});
+
 test('--platform filters which shutdown dates are used', () => {
   const [onAzure] = scanText("model = 'o3-mini'", catalog, { platform: 'azure' });
   assert.equal(onAzure.entry.shutdown, '2026-11-19');

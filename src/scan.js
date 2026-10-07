@@ -11,6 +11,11 @@ export const IGNORED_DIRS = new Set([
 // One string literal on a single line: "...", '...' or `...`, with escapes.
 const STRING_LITERAL = /(["'`])((?:\\.|(?!\1)[^\\\r\n])*)\1/g;
 
+// Short IDs like "o1" or "tts" are also common as plain identifiers ({ id: "o1" }),
+// so they only count when the line mentions a model before the string.
+const AMBIGUOUS_ID = /^(?:o\d(?:-[a-z]+)?|tts(?:-hd)?|whisper|codex-mini)$/;
+const MODEL_CONTEXT = /model|engine|deployment|llm/i;
+
 export function listSourceFiles(root) {
   const files = [];
   const walk = (dir) => {
@@ -42,6 +47,9 @@ export function scanText(text, catalog, { platform } = {}) {
     const start = m.index + 1 + match.offset;
     let line = lineStarts.length - 1;
     while (lineStarts[line] > start) line--;
+    if (match.offset === 0 && AMBIGUOUS_ID.test(match.id) && !MODEL_CONTEXT.test(text.slice(lineStarts[line], m.index))) {
+      continue;
+    }
     const primary = primaryEntry(entries);
     findings.push({
       id: match.id,
